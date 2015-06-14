@@ -5,7 +5,7 @@ Arduino Multi-Zone Sprinkler Control
 
 May 31, 2015
 
-*** Version 2.0
+*** Version 2.0.1
 
 *** Upgraded to http://MySensors.org version 1.4.1
 *** Expanded for up to 16 Valves
@@ -78,6 +78,10 @@ INSTRUCTIONS:
 * ***THIS SHOULD NO LONGER BE NEEDED*** The standard MySensors library now works. https://bitbucket.org/fmalpartida/new-liquidcrystal/downloads for the I2C library, or use yours
 
 Contributed by Jim (BulldogLowell@gmail.com) with much contribution from Pete (pete.will@mysensors.org) and is released to the public domain
+
+ver 2.0.1 14-Jun-2015
+*fixed a bug where devices would not change state controller-side when switching from single-zone to other single-zone
+*modified to test for return of state changes for each valve (changed to while loops)
 */
 //
 #include <Wire.h>
@@ -91,12 +95,14 @@ Contributed by Jim (BulldogLowell@gmail.com) with much contribution from Pete (p
 //
 #define NUMBER_OF_VALVES 8  // Change this to set your valve count up to 16.
 #define VALVE_RESET_TIME 7500UL   // Change this (in milliseconds) for the time you need your valves to hydraulically reset and change state
-#define RADIO_ID AUTO  // Change this to fix your Radio ID or use Auto
+#define RADIO_ID 9  // Change this to fix your Radio ID or use Auto
 
 #define SKETCH_NAME "MySprinkler"
-#define SKETCH_VERSION "2.0"
+#define SKETCH_VERSION "2.0.1"
 //
 #define CHILD_ID_SPRINKLER 0
+//
+#define RADIO_RESET_DELAY_TIME 15
 //
 #define ACTIVE_LOW // comment out this line if your relays are active high
 //
@@ -201,10 +207,14 @@ void setup()
     }
   }
   gw.begin(getVariables, RADIO_ID, false); // Change 'false' to 'true' to create a Radio repeating node
+  
   gw.sendSketchInfo(SKETCH_NAME, SKETCH_VERSION);
+  delay(1000);
+  delay(RADIO_RESET_DELAY_TIME);
   for (byte i = 0; i <= NUMBER_OF_VALVES; i++)
   {
     gw.present(i, S_LIGHT);
+    delay(RADIO_RESET_DELAY_TIME);
   }
   DEBUG_PRINTLN(F("Sensor Presentation Complete"));
   //
@@ -255,7 +265,7 @@ void setup()
       flashIcon = !flashIcon;
       flashIcon ? lcd.write(byte(1)) : lcd.print(F(" "));
       gw.request(i, V_VAR1);
-      delay(100);
+      delay(RADIO_RESET_DELAY_TIME);
     }
     while (gw.process() == false)
     {
@@ -263,7 +273,7 @@ void setup()
       flashIcon = !flashIcon;
       flashIcon ? lcd.write(byte(1)) : lcd.print(F(" "));
       gw.request(i, V_VAR2);
-      delay(100);
+      delay(RADIO_RESET_DELAY_TIME);
     }
     while (gw.process() == false)
     {
@@ -271,7 +281,7 @@ void setup()
       flashIcon = !flashIcon;
       flashIcon ? lcd.write(byte(1)) : lcd.print(F(" "));
       gw.request(i, V_VAR3);
-      delay(100);
+      delay(RADIO_RESET_DELAY_TIME);
     }
   }
   lcd.clear();
@@ -316,8 +326,10 @@ void loop()
       DEBUG_PRINTLN(F("State Changed... all Zones off"));
       for (byte i = 0; i <= NUMBER_OF_VALVES; i++)
       {
-        delay(50);
-        gw.send(msg1valve.setSensor(i).set(false), false);
+        while(!gw.send(msg1valve.setSensor(i).set(false), false))
+        {
+          delay(RADIO_RESET_DELAY_TIME);
+        };
       }
       lcd.clear();
       lcd.setCursor(0,0);
@@ -337,11 +349,17 @@ void loop()
       {
         if (i == 0 || i == valveNumber)
         {
-          gw.send(msg1valve.setSensor(i).set(true), false);
+          while(!gw.send(msg1valve.setSensor(i).set(true), false))
+          {
+            delay(RADIO_RESET_DELAY_TIME);
+          };
         }
         else
         {
-          gw.send(msg1valve.setSensor(i).set(false), false);
+          while(!gw.send(msg1valve.setSensor(i).set(false), false))
+          {
+            delay(RADIO_RESET_DELAY_TIME);
+          };
         }
       }
     }
@@ -377,7 +395,10 @@ void loop()
         saveDateToEEPROM(lastTimeRun);
         for (byte i = 0; i <= NUMBER_OF_VALVES; i++)
         {
-          gw.send(msg1valve.setSensor(i).set(false), false);
+          while(!gw.send(msg1valve.setSensor(i).set(false), false))
+          {
+            delay(RADIO_RESET_DELAY_TIME);
+          };
         }
         DEBUG_PRINT(F("State = "));
         DEBUG_PRINTLN(state);
@@ -387,18 +408,44 @@ void loop()
   //
   else if (state == RUN_SINGLE_ZONE)
   {
+    if (valveNumber != lastValve)
+    {
+      for (byte i = 0; i <= NUMBER_OF_VALVES; i++)
+      {
+        if (i == valveNumber)
+        {
+          while(!gw.send(msg1valve.setSensor(i).set(true), false))
+          {
+            delay(RADIO_RESET_DELAY_TIME);
+          };
+        }
+        else
+        {
+          while(!gw.send(msg1valve.setSensor(i).set(false), false))
+          {
+            delay(RADIO_RESET_DELAY_TIME);
+          };
+        }
+      }
+    }
     fastToggleLed();
     if (state != lastState)
     {
       for (byte i = 0; i <= NUMBER_OF_VALVES; i++)
       {
-        if (i == 0 || i == valveNumber)
+        if (/*i == 0 || */i == valveNumber)
         {
-          gw.send(msg1valve.setSensor(i).set(true), false);
+          while(!gw.send(msg1valve.setSensor(i).set(true), false))
+          {
+            delay(RADIO_RESET_DELAY_TIME);
+          };
         }
         else
         {
-          gw.send(msg1valve.setSensor(i).set(false), false);
+          while(!gw.send(msg1valve.setSensor(i).set(false), false))
+          {
+            delay(RADIO_RESET_DELAY_TIME);
+          };
         }
       }
       DEBUG_PRINTLN(F("State Changed, Single Zone Running..."));
@@ -419,7 +466,10 @@ void loop()
       updateRelays(ALL_VALVES_OFF);
       for (byte i = 0; i <= NUMBER_OF_VALVES; i++)
       {
-        gw.send(msg1valve.setSensor(i).set(false), false);
+        while(!gw.send(msg1valve.setSensor(i).set(false), false))
+        {
+          delay(RADIO_RESET_DELAY_TIME);
+        };
       }
       state = CYCLE_COMPLETE;
       startMillis = millis();
@@ -427,6 +477,7 @@ void loop()
       DEBUG_PRINTLN(state);
     }
     lastTimeRun = now();
+    lastValve = valveNumber;
   }
   else if (state == CYCLE_COMPLETE)
   {
