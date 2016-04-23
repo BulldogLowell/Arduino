@@ -490,7 +490,7 @@ void loop()
       state = STAND_BY_ALL_OFF;
     }
   }
-  else if (state = ZONE_SELECT_MENU)
+  else if (state == ZONE_SELECT_MENU)
   {
     displayMenu();
   }
